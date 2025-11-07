@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Final Project — ApexPlanet Capstone</title>
+  <meta name="description" content="Capstone web app with optimizations: product catalog, cart, lazy load, offline caching & cross-browser fallbacks." />
+  <style>
+    /* -------------------------
+       Critical & modern CSS
+       - small, responsive, accessible
+       ------------------------- */
+    :root{
+      --bg: #f4fbf9;
+      --card: #ffffff;
+      --muted: #647d7a;
+      --accent: #0b6b63;
+      --accent-2: #1d9d88;
+      --glass: rgba(255,255,255,0.8);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color-scheme: light;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#eef7f5);-webkit-font-smoothing:antialiased}
+    .wrap{max-width:1150px;margin:28px auto;padding:20px;display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start}
+    @media (max-width:1000px){ .wrap{grid-template-columns:1fr; padding:14px} }
+
+    header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    h1{margin:0;color:var(--accent)}
+    p.lead{margin:0;color:var(--muted)}
+
+    /* main card */
+    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(11,107,99,0.06);border:1px solid rgba(7,40,37,0.03)}
+    .grid{display:grid;gap:12px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+    input[type="search"], select, input[type="text"]{padding:10px;border-radius:8px;border:1px solid rgba(7,40,37,0.06);min-width:140px}
+    button{background:var(--accent);color:#fff;border:0;padding:9px 12px;border-radius:8px;cursor:pointer;font-weight:700}
+    .btn-ghost{background:transparent;border:1px solid rgba(7,40,37,0.06);color:var(--accent);}
+
+    /* product grid */
+    .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .product{border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#fff,#fbfffc);border:1px solid rgba(10,60,56,0.03);display:flex;flex-direction:column}
+    .product img{width:100%;height:140px;object-fit:cover;display:block;background:#e9f6f2}
+    .product .body{padding:12px;flex:1;display:flex;flex-direction:column}
+    .product h3{margin:0 0 6px 0;font-size:15px;color:#043532}
+    .meta{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+    .rating{font-weight:700;color:var(--accent)}
+    .price{font-weight:800}
+
+    /* cart (sidebar) */
+    aside .cart-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;padding-right:6px}
+    .cart-item{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;border:1px solid rgba(7,40,37,0.04);background:#fff}
+    .cart-item img{width:56px;height:40px;object-fit:cover;border-radius:6px}
+
+    /* micro */
+    .muted{color:var(--muted);font-size:13px}
+    .small{font-size:13px}
+    .hero{display:flex;gap:12px;align-items:center}
+    .badge{background:var(--accent);color:#fff;padding:6px 8px;border-radius:999px;font-weight:700}
+
+    /* accessible focus */
+    :focus{outline:3px solid rgba(29,157,136,0.18);outline-offset:2px}
+  </style>
+</head>
+<body>
+  <div class="wrap" role="application" aria-labelledby="appTitle">
+    <main>
+      <header class="card hero" aria-hidden="false">
+        <div>
+          <h1 id="appTitle">ApexPlanet — Final Capstone</h1>
+          <p class="lead muted">Compact e-commerce demo — performance-optimized, offline-capable, and cross-browser friendly.</p>
+        </div>
+        <div style="text-align:right">
+          <div class="badge" id="cartCount">0</div>
+          <div class="muted small">items in cart</div>
+        </div>
+      </header>
+
+      <!-- Search & Filters (debounced) -->
+      <section class="card grid" aria-label="Catalog controls">
+        <div class="controls" role="region" aria-label="Search and filters">
+          <input id="search" type="search" placeholder="Search products..." aria-label="Search products" />
+          <select id="category">
+            <option value="all">All categories</option>
+          </select>
+          <select id="sort">
+            <option value="relevance">Best match</option>
+            <option value="price-asc">Price ↑</option>
+            <option value="price-desc">Price ↓</option>
+            <option value="rating-desc">Rating ↓</option>
+          </select>
+          <button id="reset" class="btn-ghost" aria-label="Reset filters">Reset</button>
+          <button id="addSample" class="btn-ghost" aria-label="Add sample product">Add sample</button>
+          <button id="openAdd" class="btn" aria-haspopup="dialog" aria-controls="addModal">Add product</button>
+          <div style="margin-left:auto" aria-hidden="true" class="muted small">Optimized: lazy images · persistent cache</div>
+        </div>
+
+        <div id="catalog" class="product-grid" aria-live="polite" aria-busy="false">
+          <!-- product cards rendered here -->
+        </div>
+      </section>
+
+      <!-- About & notes (small portfolio) -->
+      <section class="card grid" aria-label="About">
+        <h2 style="margin:0">Project summary</h2>
+        <p class="muted small">Goal: Integrate skills into a final app; optimize performance (minimize payload, lazy load, reduce reflows), ensure cross-browser support and offline readiness.</p>
+        <ul class="muted small">
+          <li>Tech: Pure HTML/CSS/Vanilla JS, LocalStorage, Cache API (Service Worker)</li>
+          <li>Optimizations: IntersectionObserver lazy-load, debounced search, event delegation, requestIdleCallback for nonblocking tasks</li>
+          <li>Cross-browser: feature detection & fallbacks for older browsers</li>
+        </ul>
+      </section>
+    </main>
+
+    <!-- Sidebar: Cart -->
+    <aside>
+      <div class="card">
+        <h3 style="margin:0 0 8px 0">Cart</h3>
+        <div id="cartList" class="cart-list" aria-live="polite"></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button id="checkout" class="btn">Checkout</button>
+          <button id="clearCart" class="btn-ghost">Clear</button>
+        </div>
+      </div>
+
+      <div style="height:12px"></div>
+
+      <!-- Small admin add form (modal) -->
+      <div id="addModal" class="card" role="dialog" aria-modal="false" aria-hidden="true" style="display:none">
+        <h3 style="margin:0 0 8px 0">Add product</h3>
+        <div style="display:grid;gap:8px">
+          <input id="pname" type="text" placeholder="Product name" />
+          <input id="pprice" type="text" placeholder="Price e.g. 19.99" />
+          <input id="pcat" type="text" placeholder="Category e.g. gadgets" />
+          <input id="pimg" type="text" placeholder="Image URL (optional)" />
+          <div style="display:flex;gap:8px">
+            <button id="saveP" class="btn">Save</button>
+            <button id="cancelP" class="btn-ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+<script>
+/* ===========================================================
+   Single-file Capstone App: optimized + cross-browser fallbacks
+   Features:
+   - Product catalog + cart persisted in localStorage
+   - Lazy image loading with IntersectionObserver and fallback
+   - Debounced search (good UX and less CPU)
+   - requestIdleCallback for non-critical work
+   - Service Worker registered via Blob for offline caching
+   - Event delegation and minimal DOM updates for perf
+   =========================================================== */
+
+/* -------------------------
+   Minimal helper utilities
+   ------------------------- */
+const $ = (sel,root=document) => root.querySelector(sel);
+const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
+const uid = (p='id') => p + Math.random().toString(36).slice(2,9);
+const clamp = (v,min,max) => Math.max(min, Math.min(max, v));
+
+/* -------------------------
+   App State and storage keys
+   ------------------------- */
+const PROD_KEY = 'apx_cap_products_v1';
+const CART_KEY = 'apx_cap_cart_v1';
+let state = { products: [], cart: {} };
+
+/* -------------------------
+   Sample seed products (lazy images reference)
+   ------------------------- */
+function seedProducts(){
+  return [
+    { id: uid('pr'), name: 'Eco Water Bottle', price: 12.5, category: 'home', rating: 4.6, img: 'https://picsum.photos/seed/bottle/600/400', tags:['eco','bottle'] },
+    { id: uid('pr'), name: 'Studio Lamp', price: 45.00, category: 'gadgets', rating: 4.8, img: 'https://picsum.photos/seed/lamp/600/400', tags:['light','design'] },
+    { id: uid('pr'), name: 'Organic Notebook', price: 6.50, category: 'stationery', rating: 4.1, img: 'https://picsum.photos/seed/notebook/600/400', tags:['paper'] },
+    { id: uid('pr'), name: 'Comfort Headphones', price: 89.90, category: 'gadgets', rating: 4.3, img: 'https://picsum.photos/seed/headphone/600/400', tags:['audio'] },
+    { id: uid('pr'), name: 'Minimal Desk', price: 199.0, category: 'furniture', rating: 4.7, img: 'https://picsum.photos/seed/desk/600/400', tags:['desk'] }
+  ];
+}
+
+/* -------------------------
+   Load & save persistence
+   Use try/catch to avoid corrupt storage issues
+   ------------------------- */
+function loadState(){
+  try{
+    const p = localStorage.getItem(PROD_KEY);
+    state.products = p ? JSON.parse(p) : seedProducts();
+  }catch(e){ state.products = seedProducts(); }
+  try{
+    const c = localStorage.getItem(CART_KEY);
+    state.cart = c ? JSON.parse(c) : {};
+  }catch(e){ state.cart = {}; }
+}
+function saveProducts(){ localStorage.setItem(PROD_KEY, JSON.stringify(state.products)); }
+function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(state.cart)); }
+
+/* -------------------------
+   Rendering: incremental & minimal updates
+   - catalog rendered with document fragments
+   - event delegation for product actions
+   ------------------------- */
+const catalogEl = $('#catalog');
+const cartListEl = $('#cartList');
+const cartCountEl = $('#cartCount');
+
+function createProductCard(p){
+  // Create minimal DOM for a product card.
+  const card = document.createElement('article');
+  card.className = 'product';
+  card.setAttribute('data-id', p.id);
+  card.innerHTML = `
+    <img data-src="${escapeHTML(p.img)}" alt="${escapeHTML(p.name)}" loading="lazy" />
+    <div class="body">
+      <h3>${escapeHTML(p.name)}</h3>
+      <div class="small muted">${escapeHTML(p.category)} • ${escapeHTML((p.tags||[]).join(', '))}</div>
+      <div class="meta">
+        <div class="price">$${p.price.toFixed(2)}</div>
+        <div class="rating">${'★'.repeat(Math.round(p.rating))} <span class="muted small">${p.rating.toFixed(1)}</span></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn add-cart" data-id="${p.id}" aria-label="Add ${escapeHTML(p.name)} to cart">Add</button>
+        <button class="btn-ghost quickview" data-id="${p.id}">Quick</button>
+      </div>
+    </div>`;
+  return card;
+}
+
+function renderCatalog(list){
+  // Mark busy state for a11y
+  catalogEl.setAttribute('aria-busy','true');
+  // Use fragment for performance
+  const frag = document.createDocumentFragment();
+  for(const p of list) frag.appendChild(createProductCard(p));
+  // remove children and append
+  catalogEl.innerHTML = '';
+  catalogEl.appendChild(frag);
+  // Lazy-hook images after DOM appended
+  observeLazyImages();
+  catalogEl.setAttribute('aria-busy','false');
+}
+
+function renderCart(){
+  cartListEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  let total = 0, count=0;
+  for(const id in state.cart){
+    const item = state.products.find(x=>x.id===id);
+    if(!item) continue;
+    const qty = state.cart[id];
+    const row = document.createElement('div');
+    row.className = 'cart-item';
+    row.innerHTML = `<img data-src="${escapeHTML(item.img)}" alt="${escapeHTML(item.name)}" loading="lazy"/>
+      <div style="flex:1">
+        <div style="font-weight:700">${escapeHTML(item.name)}</div>
+        <div class="muted small">$${item.price.toFixed(2)} x ${qty}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn-ghost inc" data-id="${id}" aria-label="Increase quantity">+</button>
+        <button class="btn-ghost dec" data-id="${id}" aria-label="Decrease quantity">-</button>
+        <button class="btn-ghost remove" data-id="${id}" aria-label="Remove item">Remove</button>
+      </div>`;
+    frag.appendChild(row);
+    total += item.price * qty; count += qty;
+  }
+  if(count===0){
+    cartListEl.innerHTML = `<div class="muted">Cart is empty</div>`;
+  } else {
+    cartListEl.appendChild(frag);
+    const tot = document.createElement('div');
+    tot.style.marginTop='10px';
+    tot.style.fontWeight='800';
+    tot.textContent = `Total: $${total.toFixed(2)}`;
+    cartListEl.appendChild(tot);
+  }
+  cartCountEl.textContent = String(count);
+  observeLazyImagesIn(cartListEl);
+}
+
+/* -------------------------
+   Lazy images with IntersectionObserver + fallback
+   - uses data-src attribute
+   ------------------------- */
+let lazyObserver = null;
+function observeLazyImages(){
+  const imgs = $$('img[data-src]', catalogEl);
+  if('IntersectionObserver' in window){
+    if(!lazyObserver){
+      lazyObserver = new IntersectionObserver((entries, obs) => {
+        entries.forEach(entry=>{
+          if(entry.isIntersecting){
+            const img = entry.target;
+            img.src = img.getAttribute('data-src');
+            img.removeAttribute('data-src');
+            obs.unobserve(img);
+          }
+        });
+      }, { rootMargin: '200px' });
+    }
+    imgs.forEach(img=>{
+      // if already loaded skip
+      if(!img.hasAttribute('data-src')) return;
+      lazyObserver.observe(img);
+    });
+  } else {
+    // Fallback: load all images (older browsers)
+    imgs.forEach(img=>{
+      img.src = img.getAttribute('data-src'); img.removeAttribute('data-src');
+    });
+  }
+}
+function observeLazyImagesIn(container){
+  // Same as observeLazyImages but scoped
+  const imgs = $$('img[data-src]', container);
+  if('IntersectionObserver' in window && lazyObserver){
+    imgs.forEach(img => lazyObserver.observe(img));
+  } else {
+    imgs.forEach(img => { img.src = img.getAttribute('data-src'); img.removeAttribute('data-src'); });
+  }
+}
+
+/* -------------------------
+   Search / filter / sort
+   Debounced input to reduce reflows
+   ------------------------- */
+const searchInput = $('#search');
+const categorySelect = $('#category');
+const sortSelect = $('#sort');
+const resetBtn = $('#reset');
+
+function populateCategories(){
+  const set = new Set(state.products.map(p => p.category));
+  categorySelect.innerHTML = '<option value="all">All categories</option>';
+  for(const c of set) {
+    const opt = document.createElement('option'); opt.value = c; opt.textContent = c; categorySelect.appendChild(opt);
+  }
+}
+
+function applyFilters(){
+  let list = state.products.slice();
+  const term = (searchInput.value || '').trim().toLowerCase();
+  const cat = categorySelect.value;
+  if(cat !== 'all') list = list.filter(p=>p.category === cat);
+  if(term) list = list.filter(p => (p.name + ' ' + (p.tags||[]).join(' ')).toLowerCase().includes(term));
+  const sortBy = sortSelect.value;
+  if(sortBy === 'price-asc') list.sort((a,b)=>a.price-b.price);
+  else if(sortBy === 'price-desc') list.sort((a,b)=>b.price-a.price);
+  else if(sortBy === 'rating-desc') list.sort((a,b)=>b.rating-b.rating);
+  renderCatalog(list);
+}
+
+/* debounce util (simple) */
+function debounce(fn, wait=240){
+  let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), wait); };
+}
+
+/* -------------------------
+   Event handlers (delegation)
+   ------------------------- */
+catalogEl.addEventListener('click', (e) => {
+  const add = e.target.closest('.add-cart');
+  const quick = e.target.closest('.quickview');
+  if(add){
+    const id = add.dataset.id; addToCart(id, 1);
+  } else if(quick){
+    const id = quick.dataset.id; quickView(id);
+  }
+});
+
+/* cart actions via delegation */
+cartListEl.addEventListener('click', (e) => {
+  const inc = e.target.closest('.inc');
+  const dec = e.target.closest('.dec');
+  const rem = e.target.closest('.remove');
+  if(inc){ changeQty(inc.dataset.id, 1); }
+  if(dec){ changeQty(dec.dataset.id, -1); }
+  if(rem){ removeFromCart(rem.dataset.id); }
+});
+
+function addToCart(id, qty=1){
+  state.cart[id] = (state.cart[id]||0) + qty;
+  saveCart();
+  renderCart();
+}
+function changeQty(id, delta){
+  if(!state.cart[id]) return;
+  state.cart[id] = clamp(state.cart[id] + delta, 0, 999);
+  if(state.cart[id] === 0) delete state.cart[id];
+  saveCart(); renderCart();
+}
+function removeFromCart(id){
+  delete state.cart[id]; saveCart(); renderCart();
+}
+
+/* quick view uses requestAnimationFrame for smoothness */
+function quickView(id){
+  const p = state.products.find(x=>x.id===id);
+  if(!p) return alert('Product not found');
+  // synchronous prompt for simplicity — but wrapped in rAF for less jank
+  requestAnimationFrame(()=> alert(`${p.name}\n\n$${p.price.toFixed(2)}\n\nCategory: ${p.category}\n\nDescription: ${p.tags.join(', ')}`));
+}
+
+/* -------------------------
+   Add product modal logic
+   - small accessible modal (not blocking)
+   ------------------------- */
+const addModal = $('#addModal');
+$('#openAdd').addEventListener('click', ()=> {
+  addModal.style.display='block'; addModal.setAttribute('aria-hidden','false'); addModal.setAttribute('aria-modal','true');
+  $('#pname').focus();
+});
+$('#cancelP').addEventListener('click', ()=> { addModal.style.display='none'; addModal.setAttribute('aria-hidden','true'); addModal.setAttribute('aria-modal','false'); });
+$('#saveP').addEventListener('click', ()=>{
+  const name = $('#pname').value.trim(); const price = parseFloat($('#pprice').value); const cat = $('#pcat').value.trim() || 'misc'; const img = $('#pimg').value.trim() || `https://picsum.photos/seed/${Math.random().toString(36).slice(2,6)}/600/400`;
+  if(!name || Number.isNaN(price)){ return alert('Enter valid name and price'); }
+  const prod = { id: uid('pr'), name, price: Math.round(price*100)/100, category: cat, rating: 4.0, img, tags:[] };
+  state.products.unshift(prod);
+  saveProducts();
+  populateCategories();
+  addModal.style.display='none'; addModal.setAttribute('aria-hidden','true');
+  applyFilters();
+});
+
+/* Add sample product quick add */
+$('#addSample').addEventListener('click', ()=>{
+  const p = { id: uid('pr'), name: 'New Sample '+(state.products.length+1), price: Math.round((Math.random()*80+5)*100)/100, category: ['gadgets','home','stationery','furniture'][Math.floor(Math.random()*4)], rating: (Math.random()*1.6+3.4), img: `https://picsum.photos/seed/${Math.random().toString(36).slice(2,6)}/600/400`, tags: ['sample'] };
+  state.products.unshift(p); saveProducts(); populateCategories(); applyFilters();
+});
+
+/* Reset filters */
+$('#reset').addEventListener('click', ()=>{ searchInput.value=''; categorySelect.value='all'; sortSelect.value='relevance'; applyFilters(); });
+
+/* Checkout & clear */
+$('#checkout').addEventListener('click', ()=> {
+  if(Object.keys(state.cart).length === 0) return alert('Cart empty');
+  // trivial checkout simulation
+  alert(`Thank you! Order total: $${Object.entries(state.cart).reduce((s,[id,qty]) => {
+    const p = state.products.find(x=>x.id === id); return s + (p ? p.price * qty : 0);
+  },0).toFixed(2)}`);
+  state.cart = {}; saveCart(); renderCart();
+});
+$('#clearCart').addEventListener('click', ()=> { if(confirm('Clear cart?')){ state.cart={}; saveCart(); renderCart(); } });
+
+/* keyboard accessibility: Esc closes modal */
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && addModal.style.display === 'block'){ addModal.style.display='none'; addModal.setAttribute('aria-hidden','true'); } });
+
+/* -------------------------
+   Utilities: escape HTML
+   ------------------------- */
+function escapeHTML(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* -------------------------
+   Debounced search wiring
+   - responsive and low CPU
+   ------------------------- */
+const debouncedFilter = debounce(()=> applyFilters(), 200);
+searchInput.addEventListener('input', debouncedFilter);
+categorySelect.addEventListener('change', applyFilters);
+sortSelect.addEventListener('change', applyFilters);
+
+/* -------------------------
+   Performance: non-critical tasks using requestIdleCallback
+   - fallback if not available
+   ------------------------- */
+function runIdle(callback){
+  if('requestIdleCallback' in window){ requestIdleCallback(callback, {timeout:1500}); }
+  else{ setTimeout(callback, 500); }
+}
+
+/* -------------------------
+   Boot: load data & render
+   ------------------------- */
+function boot(){
+  loadState();
+  populateCategories();
+  applyFilters();
+  renderCart();
+  // non-critical: precompute derived lists or heavy work
+  runIdle(()=> {
+    // warm caches for first few images by preloading small thumbnails
+    const urls = state.products.slice(0,3).map(p=>p.img);
+    urls.forEach(u => { const i=new Image(); i.src=u; });
+  });
+  // register service worker (if supported) from an inline blob so single-file works
+  registerInlineServiceWorker();
+}
+boot();
+
+/* -------------------------
+   Service Worker registration (inline Blob)
+   - caches app shell and images
+   - fallback gracefully if SW not supported or insecure context
+   ------------------------- */
+function registerInlineServiceWorker(){
+  if(!('serviceWorker' in navigator)) return;
+  try {
+    const swCode = `
+      const CACHE = 'apx-cap-cache-v1';
+      const ASSETS = ['/', location.pathname];
+      self.addEventListener('install', evt => {
+        self.skipWaiting();
+        evt.waitUntil(
+          caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(()=>{})
+        );
+      });
+      self.addEventListener('activate', evt => { evt.waitUntil(self.clients.claim()); });
+      self.addEventListener('fetch', evt => {
+        // network-first for API-like requests (none here), cache-first for static
+        const req = evt.request;
+        // only handle GET
+        if(req.method !== 'GET') return;
+        evt.respondWith(
+          caches.match(req).then(cached => {
+            if(cached) return cached;
+            return fetch(req).then(res => {
+              // cache images and same-origin resources
+              if(res && res.type!=='opaque' && req.destination !== 'document'){
+                const copy = res.clone();
+                caches.open(CACHE).then(c => c.put(req, copy));
+              }
+              return res;
+            }).catch(()=> cached || new Response('',{status:504}));
+          })
+        );
+      });
+    `;
+    const blob = new Blob([swCode], {type: 'text/javascript'});
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl).then(reg => {
+      // optional: you can log reg scope ...
+      console.info('SW registered (blob):', reg.scope);
+    }).catch(err => {
+      console.warn('SW not registered:', err);
+    });
+  } catch(e){ console.warn('SW registration exception', e); }
+}
+
+/* -------------------------
+   Cross-browser: small polyfill examples
+   - for older browsers lacking remove() on Element, etc.
+   ------------------------- */
+(function polyfills(){
+  if(!Element.prototype.remove){
+    Element.prototype.remove = function(){ if(this.parentNode) this.parentNode.removeChild(this); };
+  }
+  // minimal forEach on NodeList (IE)
+  if(NodeList && !NodeList.prototype.forEach){
+    NodeList.prototype.forEach = Array.prototype.forEach;
+  }
+})();
+
+/* -------------------------
+   Small UX: show product quick add sample on first load (idle)
+   ------------------------- */
+runIdle(()=>{
+  if(!localStorage.getItem('apx_first_visit')){ localStorage.setItem('apx_first_visit','1'); $('#addSample').click(); }
+});
+
+/* -------------------------
+   Helpful: expose state for console debugging (dev only)
+   ------------------------- */
+window.__APX_STATE = state;
+</script>
+</body>
+</html>
